@@ -1,0 +1,1 @@
+# generic-thrift-client
