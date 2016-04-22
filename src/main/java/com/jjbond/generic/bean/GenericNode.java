@@ -1,4 +1,4 @@
-package bean;
+package com.jjbond.generic.bean;
 
 import java.util.List;
 

@@ -1,5 +1,7 @@
-import bean.GenericNode;
-import bean.GenericTree;
+package com.jjbond.generic;
+
+import com.jjbond.generic.bean.GenericNode;
+import com.jjbond.generic.bean.GenericTree;
 import org.apache.thrift.async.AsyncMethodCallback;
 import org.apache.thrift.protocol.TProtocolFactory;
 import org.apache.thrift.protocol.TType;

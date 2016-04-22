@@ -1,4 +1,4 @@
-package bean;
+package com.jjbond.generic.bean;
 
 /**
  * Created by waj on 16-4-5.
