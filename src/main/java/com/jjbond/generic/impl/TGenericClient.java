@@ -13,16 +13,15 @@ import org.apache.thrift.async.AsyncMethodCallback;
 import org.apache.thrift.async.TAsyncClient;
 import org.apache.thrift.async.TAsyncClientManager;
 import org.apache.thrift.async.TAsyncMethodCall;
-import org.apache.thrift.protocol.TMessage;
-import org.apache.thrift.protocol.TMessageType;
-import org.apache.thrift.protocol.TProtocol;
-import org.apache.thrift.protocol.TProtocolFactory;
+import org.apache.thrift.protocol.*;
 import org.apache.thrift.transport.TNonblockingTransport;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Created by waj on 16-4-22.
@@ -32,6 +31,8 @@ public class TGenericClient implements GenericClient {
 
 
     public static String PARAMINFO_COLLECTION_INNER_KEY = "collection_inner_key";
+    public static String PARAMINFO_COLLECTION_MAP_KEY = "collection_map_key";
+    public static String PARAMINFO_COLLECTION_MAP_VALUE = "collection_map_value";
     private static String WRITE = "write";
     private static String READ = "read";
 
@@ -155,23 +156,46 @@ public class TGenericClient implements GenericClient {
             oprot.writeFieldBegin(tField);
             //TODO:假设目前集合只有List类型
             String json = JSON.toJSONString(value);
-            List list = JSON.parseObject(json, List.class);
-            GenericTree child = genericTree.getChildren().get(PARAMINFO_COLLECTION_INNER_KEY);
-            String childThriftType = child.getThrfitType();
-            oprot.writeListBegin(new org.apache.thrift.protocol.TList(ttypeMap.get(childThriftType.toUpperCase()), list.size()));
-            //获取容器的孩子节点，如果集合是基础类型的 本次遍历就到这里
-            if (isPrimitiveType(child)) {
-                for (Object obj : list) {
-                    String childThrfitType = child.getThrfitType();
-                    doProtocolMethod(oprot, childThrfitType, obj, WRITE);
+            if (isColletionMap(genericTree)) {
+                GenericTree k = genericTree.getChildren().get(PARAMINFO_COLLECTION_MAP_KEY);
+                GenericTree v = genericTree.getChildren().get(PARAMINFO_COLLECTION_MAP_VALUE);
+                if (k == null || v == null) {
+                    System.out.println("key or value is not found in GenericNode !");
+                } else {
+                    Map map =  JSON.parseObject(json, Map.class);
+                    oprot.writeMapBegin(new TMap(ttypeMap.get(k.getThrfitType().toUpperCase()), ttypeMap.get(v.getThrfitType().toUpperCase()), map.size()));
+                    Set<Map.Entry> set = map.entrySet();
+                    for (Map.Entry entry : set) {
+                        //TODO:只支持key是简单类型
+                        doProtocolMethod(oprot, k.getThrfitType(), entry.getKey(), WRITE);
+                        if (v.getParamType() == TypeEnum.PRIMITIVE_TYPE)
+                            doProtocolMethod(oprot, v.getThrfitType(), entry.getValue(), WRITE);
+                        else {
+                            writeVal(oprot, v, entry.getValue(), id);
+                        }
+                    }
+                    oprot.writeMapEnd();
                 }
-            } else {
-                for (Object obj : list) {
-                    short ids = 1;
-                    writeVal(oprot, child, obj, ids);
+            }else {
+                List list = JSON.parseObject(json, List.class);
+                GenericTree child = genericTree.getChildren().get(PARAMINFO_COLLECTION_INNER_KEY);
+                String childThriftType = child.getThrfitType();
+                oprot.writeListBegin(new org.apache.thrift.protocol.TList(ttypeMap.get(childThriftType.toUpperCase()), list.size()));
+                //获取容器的孩子节点，如果集合是基础类型的 本次遍历就到这里
+                if (isPrimitiveType(child)) {
+                    for (Object obj : list) {
+                        String childThrfitType = child.getThrfitType();
+                        doProtocolMethod(oprot, childThrfitType, obj, WRITE);
+                    }
+                } else {
+                    for (Object obj : list) {
+                        short ids = 1;
+                        writeVal(oprot, child, obj, ids);
+                    }
                 }
+                oprot.writeListEnd();
             }
-            oprot.writeListEnd();
+
             oprot.writeFieldEnd();
         } else {
             String structName = genericTree.getType();
@@ -212,11 +236,40 @@ public class TGenericClient implements GenericClient {
                 Object obj = doProtocolMethod(iprot, thriftType, null, READ);
                 result.put(key, obj);
             } else if (isColletionType(genericTree)) {
-                if (schemeField.type != org.apache.thrift.protocol.TType.LIST && schemeField.type != org.apache.thrift.protocol.TType.SET) {
+                if (schemeField.type != org.apache.thrift.protocol.TType.LIST && schemeField.type != org.apache.thrift.protocol.TType.SET && schemeField.type != TType.MAP) {
                     System.out.println("返回结果参数类型不是集合类型！ ： " + schemeField.type);
                     break;
                     //TODO:若类型不匹配则跳过这段数据报文   org.apache.thrift.protocol.TProtocolUtil.skip(iprot, schemeField.type);
                 }
+
+                //MAP单独处理
+                if (schemeField.type == TType.MAP) {
+                    org.apache.thrift.protocol.TMap _map0 = iprot.readMapBegin();
+                    GenericTree key = genericTree.getChildren().get(PARAMINFO_COLLECTION_MAP_KEY);
+                    GenericTree value = genericTree.getChildren().get(PARAMINFO_COLLECTION_MAP_VALUE);
+                    if (key == null || value == null) {
+                        System.out.println("key or value is not found in GenericNode !");
+                        break;
+                    }
+                    Map map = new HashMap(2 * _map0.size);
+                    //TODO:默认key是简单类型
+                    for (int i = 0; i < _map0.size; ++i) {
+                        Object obj_key = doProtocolMethod(iprot, key.getThrfitType(), null, READ);
+                        if (value.getParamType() == TypeEnum.PRIMITIVE_TYPE) {
+                            Object obj_value = doProtocolMethod(iprot, key.getThrfitType(), null, READ);
+                            map.put(obj_key, obj_value);
+                        } else {
+                            Map map_value = Maps.newHashMap();
+                            List<GenericTree> children = Lists.newArrayList(value.getChildren().values());
+                            read(iprot, children, map_value);
+                            map.put(obj_key, map_value);
+                        }
+                    }
+                    result.put(genericTree.getName(), map);
+                    iprot.readMapEnd();
+                    break;
+                }
+
                 org.apache.thrift.protocol.TList _list0 = iprot.readListBegin();
                 //获取容器的孩子节点，如果集合是基础类型的 本次遍历就到这里
                 GenericTree child = genericTree.getChildren().get(PARAMINFO_COLLECTION_INNER_KEY);
@@ -280,6 +333,10 @@ public class TGenericClient implements GenericClient {
 
     private boolean isColletionType(GenericTree genericTree) {
         return genericTree.getParamType().getCode() == TypeEnum.COLLECTION_TYPE.getCode();
+    }
+
+    private boolean isColletionMap(GenericTree genericTree) {
+        return genericTree.getThrfitType().toUpperCase().equals("MAP");
     }
 
 

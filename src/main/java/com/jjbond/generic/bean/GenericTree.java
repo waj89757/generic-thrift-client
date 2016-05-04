@@ -1,7 +1,7 @@
 package com.jjbond.generic.bean;
 
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.LinkedHashMap;
 
 /**
  * Created by waj on 16-4-5.
@@ -21,7 +21,7 @@ public class GenericTree {
 
     private GenericTree parent;
 
-    private TreeMap<String,GenericTree> children;  //必须按照参数顺序有序排序
+    private LinkedHashMap<String,GenericTree> children;  //必须按照参数顺序有序排序
 
 
 
@@ -54,7 +54,7 @@ public class GenericTree {
         return children;
     }
 
-    public void setChildren(TreeMap<String, GenericTree> children) {
+    public void setChildren(LinkedHashMap<String, GenericTree> children) {
         this.children = children;
     }
 
